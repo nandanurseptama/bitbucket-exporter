@@ -21,3 +21,4 @@
 /tools/src
 /vendor
 config.yaml
+*.cache
