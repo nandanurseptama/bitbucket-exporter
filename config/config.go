@@ -23,7 +23,8 @@ import (
 )
 
 type Config struct {
-	Auth *AuthConfig `yaml:"auth"`
+	Auth              *AuthConfig `yaml:"auth"`
+	IncludedWorkspace []string    `yaml:"included_workspaces"`
 }
 
 type Handler struct {

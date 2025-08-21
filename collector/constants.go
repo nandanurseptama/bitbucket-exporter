@@ -11,6 +11,7 @@ const (
 
 // key for mapping collectors
 const (
+	keyScrapeCollector       = "scrape"
 	keyRepositoriesCollector = "repositories"
 )
 

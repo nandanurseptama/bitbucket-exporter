@@ -14,8 +14,11 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/nandanurseptama/bitbucket-exporter/collector"
@@ -70,8 +73,9 @@ func main() {
 
 	prometheus.MustRegister(versioncollector.NewCollector(exporterName))
 
-	exporters := collector.NewBitbucketCollector(logger, c.Config.Auth)
-	prometheus.MustRegister(exporters)
+	exporters := collector.NewBitbucketCollector(logger, c.Config)
+	collectors := exporters.GetCollectors()
+	prometheus.MustRegister(collectors...)
 
 	http.Handle(*metricsPath, promhttp.Handler())
 
@@ -94,11 +98,29 @@ func main() {
 		}
 		http.Handle("/", landingPage)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	srv := &http.Server{}
-	if err := web.ListenAndServe(srv, webConfig, logger); err != nil {
-		logger.Error("Error running HTTP server", "err", err)
-		os.Exit(1)
+
+	go func() {
+		if err := web.ListenAndServe(srv, webConfig, logger); err != nil {
+			logger.Error("Error running HTTP server", "err", err)
+			os.Exit(1)
+		}
+	}()
+
+	go func() {
+		exporters.Exec(ctx)
+	}()
+
+	<-ctx.Done()
+	logger.Info("Shutting down server...")
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error("Server forced to shutdown", "err", err)
 	}
+
+	logger.Info("Server exited gracefully")
 
 }

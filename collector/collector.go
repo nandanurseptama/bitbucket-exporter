@@ -24,17 +24,36 @@ import (
 )
 
 var (
-	scrapeDurationDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "scrape", "collector_duration_seconds"),
-		"bitbucket_exporter: Duration of a collector scrape.",
+	scrapeDurationOpts = prometheus.Opts{
+		Namespace:   namespace,
+		Subsystem:   "scrape",
+		Name:        "collector_duration_seconds",
+		Help:        "bitbucket_exporter: Duration of a collector scrape.",
+		ConstLabels: nil,
+	}
+	scrapeSuccessOpts = prometheus.Opts{
+		Namespace:   namespace,
+		Subsystem:   "scrape",
+		Name:        "collector_success",
+		Help:        "bitbucket_exporter:  Whether a collector succeeded.",
+		ConstLabels: nil,
+	}
+
+	scrapeDurationGaugeVec = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: scrapeDurationOpts.Namespace,
+			Subsystem: scrapeDurationOpts.Subsystem,
+			Name:      scrapeDurationOpts.Name,
+		},
 		[]string{"collector"},
-		nil,
 	)
-	scrapeSuccessDesc = prometheus.NewDesc(
-		prometheus.BuildFQName(namespace, "scrape", "collector_success"),
-		"bitbucket_exporter: Whether a collector succeeded.",
+	scrapeSuccessGaugeVec = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: scrapeSuccessOpts.Namespace,
+			Subsystem: scrapeSuccessOpts.Subsystem,
+			Name:      scrapeSuccessOpts.Name,
+		},
 		[]string{"collector"},
-		nil,
 	)
 )
 
@@ -45,47 +64,80 @@ type BitbucketCollector struct {
 }
 
 type Collector interface {
-	Exec(ctx context.Context, instance *instance, ch chan<- prometheus.Metric) error
+	prometheus.Collector
+	Exec(ctx context.Context, instance *instance) error
 }
 
-func NewBitbucketCollector(logger *slog.Logger, authConfig *config.AuthConfig) *BitbucketCollector {
+func NewBitbucketCollector(
+	logger *slog.Logger, config *config.Config,
+) *BitbucketCollector {
 	return &BitbucketCollector{
-		instance: newInstance(authConfig),
+		instance: newInstance(config.Auth),
 		logger:   logger,
 		collectors: map[string]Collector{
-			keyRepositoriesCollector: &repositoriesCollector{},
+			keyRepositoriesCollector: &repositoriesCollector{
+				workspaces: config.IncludedWorkspace,
+			},
 		},
 	}
 }
 
+type mainCollector struct {
+}
+
+func (c *mainCollector) Collect(ch chan<- prometheus.Metric) {
+	scrapeDurationGaugeVec.Collect(ch)
+	scrapeSuccessGaugeVec.Collect(ch)
+}
+
 // Describe implements the prometheus.Collector interface.
-func (p BitbucketCollector) Describe(ch chan<- *prometheus.Desc) {
-	ch <- scrapeDurationDesc
-	ch <- scrapeSuccessDesc
+func (p *mainCollector) Describe(ch chan<- *prometheus.Desc) {
+	scrapeDurationGaugeVec.Describe(ch)
+	scrapeSuccessGaugeVec.Describe(ch)
 }
 
-// Collect implements the prometheus.Collector interface.
-func (p BitbucketCollector) Collect(ch chan<- prometheus.Metric) {
-	ctx := context.TODO()
-
-	wg := sync.WaitGroup{}
-	wg.Add(len(p.collectors))
-	for name, c := range p.collectors {
-		go func(name string, c Collector) {
-			execute(ctx, name, c, p.instance, ch, p.logger)
-
-			wg.Done()
-		}(name, c)
+// Get all collectors
+func (c *BitbucketCollector) GetCollectors() []prometheus.Collector {
+	var collectors []prometheus.Collector
+	collectors = append(collectors, &mainCollector{})
+	for _, v := range c.collectors {
+		collectors = append(collectors, v)
 	}
-	wg.Wait()
+	return collectors
 }
 
-func execute(ctx context.Context, name string, c Collector, instance *instance, ch chan<- prometheus.Metric, logger *slog.Logger) {
+// collect bitbucket data at background
+func (c *BitbucketCollector) Exec(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			var wg sync.WaitGroup
+
+			for name, collector := range c.collectors {
+				wg.Add(1)
+				go func(name string, collector Collector) {
+					defer wg.Done()
+					execute(ctx, name, collector, c.instance, c.logger)
+				}(name, collector)
+			}
+
+			// wait until all collectors finish
+			wg.Wait()
+			time.Sleep(10 * time.Second)
+		}
+	}
+
+}
+
+func execute(
+	ctx context.Context, name string, c Collector, instance *instance, logger *slog.Logger,
+) {
 	begin := time.Now()
-	err := c.Exec(ctx, instance, ch)
+	err := c.Exec(ctx, instance)
 	duration := time.Since(begin)
 	var success float64
-
 	if err != nil {
 		logger.Error("collector failed", "name", name, "duration_seconds", duration.Seconds(), "err", err)
 		success = 0
@@ -93,6 +145,6 @@ func execute(ctx context.Context, name string, c Collector, instance *instance, 
 		logger.Debug("collector succeeded", "name", name, "duration_seconds", duration.Seconds())
 		success = 1
 	}
-	ch <- prometheus.MustNewConstMetric(scrapeDurationDesc, prometheus.GaugeValue, duration.Seconds(), name)
-	ch <- prometheus.MustNewConstMetric(scrapeSuccessDesc, prometheus.GaugeValue, success, name)
+	scrapeDurationGaugeVec.WithLabelValues(name).Add(duration.Seconds())
+	scrapeSuccessGaugeVec.WithLabelValues(name).Set(success)
 }
