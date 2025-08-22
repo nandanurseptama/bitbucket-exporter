@@ -65,24 +65,26 @@ type BitbucketCollector struct {
 
 type Collector interface {
 	prometheus.Collector
+
+	// collect metrics at background
 	Exec(ctx context.Context, instance *instance) error
 }
 
 func NewBitbucketCollector(
-	logger *slog.Logger, config *config.Config,
+	logger *slog.Logger,
+	config *config.Config,
 ) *BitbucketCollector {
 	return &BitbucketCollector{
 		instance: newInstance(config.Auth),
 		logger:   logger,
 		collectors: map[string]Collector{
-			keyRepositoriesCollector: &repositoriesCollector{
-				workspaces: config.IncludedWorkspace,
-			},
+			keyRepositoriesCollector: NewRepositoriesCollector(config.IncludedWorkspace),
 		},
 	}
 }
 
 type mainCollector struct {
+	
 }
 
 func (c *mainCollector) Collect(ch chan<- prometheus.Metric) {

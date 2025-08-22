@@ -5,33 +5,144 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type repositoriesCollector struct {
-	workspaces []string
-}
-
+var repoLabels = []string{"workspace", "project", "name", "langauge"}
 var (
-	bitbucketTotalReposioriesCollector = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: namespace,
-			Subsystem: subSystemRepositories,
-			Name:      "total",
-			Help:      "Total of repositories",
-		},
-		[]string{"workspace", "project"},
+	repoInfoDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(
+			namespace,
+			subSystemRepositories,
+			"info",
+		),
+		"Information about a Bitbucket repo",
+		repoLabels,
+		nil,
 	)
+	repoCreatedOnDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(
+			namespace,
+			subSystemRepositories,
+			"created_on",
+		),
+		"Timestamp of creation of repo",
+		repoLabels,
+		nil,
+	)
+	repoUpdatedOnDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(
+			namespace,
+			subSystemRepositories,
+			"updated_on",
+		),
+		"Timestamp of the last modification of repo",
+		repoLabels,
+		nil,
+	)
+	repoSizeDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(
+			namespace,
+			subSystemRepositories,
+			"size",
+		),
+		"Size of repo in KB",
+		repoLabels,
+		nil,
+	)
+
+	// repoHasIssuesDesc = prometheus.NewDesc(
+	// 	prometheus.BuildFQName(
+	// 		namespace,
+	// 		subSystemRepositories,
+	// 		"has_issues",
+	// 	),
+	// 	"Whether the repo has issue or not",
+	// 	[]string{"workspace", "project", "name", "langauge"},
+	// 	nil,
+	// )
+	// repoHasWikiDesc = prometheus.NewDesc(
+	// 	prometheus.BuildFQName(
+	// 		namespace,
+	// 		subSystemRepositories,
+	// 		"has_wiki",
+	// 	),
+	// 	"Whether the repo has wiki or not",
+	// 	[]string{"workspace", "project", "name", "langauge"},
+	// 	nil,
+	// )
+	// repoIsPrivateDesc = prometheus.NewDesc(
+	// 	prometheus.BuildFQName(
+	// 		namespace,
+	// 		subSystemRepositories,
+	// 		"is_private",
+	// 	),
+	// 	"Whether the repo is private or not",
+	// 	[]string{"workspace", "project", "name", "langauge"},
+	// 	nil,
+	// )
 )
 
+type repositoriesCollector struct {
+	workspaces []string
+	holders    *DataHolder[[]Repository]
+}
+
+func NewRepositoriesCollector(workspaces []string) *repositoriesCollector {
+	return &repositoriesCollector{
+		workspaces: workspaces,
+		holders:    &DataHolder[[]Repository]{},
+	}
+}
+
+// Collect implements the prometheus.Collector interface.
 func (c *repositoriesCollector) Collect(ch chan<- prometheus.Metric) {
-	bitbucketTotalReposioriesCollector.Collect(ch)
+	c.holders.Lock()
+	defer c.holders.Unlock()
+
+	for _, v := range c.holders.data {
+		labels := []string{v.Workspace.Slug, v.Project.Key, v.Slug, v.Language}
+		ch <- prometheus.MustNewConstMetric(
+			repoInfoDesc,
+			prometheus.GaugeValue,
+			1,
+			labels...,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			repoCreatedOnDesc,
+			prometheus.GaugeValue,
+			float64(v.CreatedOn.Unix()),
+			labels...,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			repoUpdatedOnDesc,
+			prometheus.GaugeValue,
+			float64(v.UpdatedOn.Unix()),
+			labels...,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			repoSizeDesc,
+			prometheus.GaugeValue,
+			float64(v.Size),
+			labels...,
+		)
+
+	}
+
+	// make empty
+	c.holders.data = []Repository{}
+
 }
 
 // Describe implements the prometheus.Collector interface.
 func (p *repositoriesCollector) Describe(ch chan<- *prometheus.Desc) {
-	bitbucketTotalReposioriesCollector.Describe(ch)
+	ch <- repoInfoDesc
+	ch <- repoCreatedOnDesc
+	ch <- repoUpdatedOnDesc
+	ch <- repoSizeDesc
+
 }
 
 func (c *repositoriesCollector) Exec(
@@ -40,9 +151,11 @@ func (c *repositoriesCollector) Exec(
 ) error {
 	page := 1
 	for _, workspace := range c.workspaces {
-		var params = map[string]string{"role": "member", "sort": "-created_on", "page": strconv.Itoa(page)}
+
 		for {
-			var respBody PaginationResponse[Repositories]
+			var params = map[string]string{"role": "member", "sort": "-created_on", "page": strconv.Itoa(page)}
+
+			var respBody PaginationResponse[Repository]
 			err := instance.GET(ctx, fmt.Sprintf("%s/%s", repositoriesEndpoint, workspace), params, &respBody)
 
 			if err != nil {
@@ -50,14 +163,11 @@ func (c *repositoriesCollector) Exec(
 			}
 
 			values := respBody.Values
-
-			if len(values) < 1 {
-				return nil
-			}
-
-			for _, v := range values {
-				labels := []string{v.Workspace.Slug, v.Project.Key}
-				bitbucketTotalReposioriesCollector.WithLabelValues(labels...).Inc()
+			// add to data holder
+			if len(values) > 0 {
+				c.holders.Lock()
+				c.holders.data = append(c.holders.data, values...)
+				c.holders.Unlock()
 			}
 
 			if respBody.Next == nil {
@@ -78,14 +188,16 @@ func (c *repositoriesCollector) Exec(
 				return nil
 			}
 
-			_, err = strconv.Atoi(nextPage)
+			nextPageInt, err := strconv.Atoi(nextPage)
 
 			if err != nil {
 				return err
 			}
 
 			fmt.Println("nextPage :", nextPage)
-			params["page"] = nextPage
+			page = nextPageInt
+
+			time.Sleep(1 * time.Second)
 		}
 	}
 
