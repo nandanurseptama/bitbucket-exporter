@@ -3,21 +3,14 @@ package collector
 import (
 	"context"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-type memberData struct {
-	sync.Mutex
-	// mapping of workspace to total member
-	total map[string]uint64
-}
-
 type memberCollector struct {
 	workspaces []string
-	holders    *DataHolder[memberData]
+	holders    *DataHolder[map[string]uint64]
 }
 
 var (
@@ -37,10 +30,8 @@ var (
 func NewMemberCollector(workspaces []string) *memberCollector {
 	return &memberCollector{
 		workspaces: workspaces,
-		holders: &DataHolder[memberData]{
-			data: memberData{
-				total: map[string]uint64{},
-			},
+		holders: &DataHolder[map[string]uint64]{
+			data: map[string]uint64{},
 		},
 	}
 }
@@ -48,7 +39,7 @@ func NewMemberCollector(workspaces []string) *memberCollector {
 func (c *memberCollector) Collect(ch chan<- prometheus.Metric) {
 	c.holders.Lock()
 	defer c.holders.Unlock()
-	for k, v := range c.holders.data.total {
+	for k, v := range c.holders.data {
 		labels := []string{k}
 		ch <- prometheus.MustNewConstMetric(
 			bitbucketTotalMemberDesc,
@@ -74,7 +65,7 @@ func (c *memberCollector) Exec(ctx context.Context, instance *instance) error {
 			return err
 		}
 		c.holders.Lock()
-		c.holders.data.total[workspace] = responsebody.Size
+		c.holders.data[workspace] = responsebody.Size
 		c.holders.Unlock()
 
 		time.Sleep(time.Second * 5)

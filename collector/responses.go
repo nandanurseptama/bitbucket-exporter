@@ -40,3 +40,8 @@ type Project struct {
 	Uuid string `json:"uuid"`
 	Name string `json:"name"`
 }
+
+type Refs struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
+}

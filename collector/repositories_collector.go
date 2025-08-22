@@ -64,14 +64,19 @@ var (
 )
 
 type repositoriesCollector struct {
-	workspaces []string
-	holders    *DataHolder[[]Repository]
+	workspaces                []string
+	holders                   *DataHolder[[]Repository]
+	repositoryRefsDataChannel chan<- Repository
 }
 
-func NewRepositoriesCollector(workspaces []string) *repositoriesCollector {
+func NewRepositoriesCollector(
+	workspaces []string,
+	repositoryRefsDataChannel chan<- Repository,
+) *repositoriesCollector {
 	return &repositoriesCollector{
-		workspaces: workspaces,
-		holders:    &DataHolder[[]Repository]{},
+		workspaces:                workspaces,
+		holders:                   &DataHolder[[]Repository]{},
+		repositoryRefsDataChannel: repositoryRefsDataChannel,
 	}
 }
 
@@ -149,6 +154,13 @@ func (c *repositoriesCollector) Exec(
 				c.holders.data = append(c.holders.data, values...)
 				c.holders.Unlock()
 			}
+
+			fmt.Println("passing to refs collector")
+			// send to refs data channel
+			for _, v := range values {
+				c.repositoryRefsDataChannel <- v
+			}
+			fmt.Println("passing to other done")
 
 			if respBody.Next == nil {
 				return nil
