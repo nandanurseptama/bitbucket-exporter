@@ -22,6 +22,9 @@ type Repository struct {
 	CreatedOn time.Time `json:"created_on"`
 	UpdatedOn time.Time `json:"updated_on"`
 	Size      uint64    `json:"size"`
+	HasIssues bool      `json:"has_issues"`
+	HasWiki   bool      `json:"has_wiki"`
+	IsPrivate bool      `json:"is_private"`
 }
 
 // Response wrapper for workspace

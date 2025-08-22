@@ -84,7 +84,6 @@ func NewBitbucketCollector(
 }
 
 type mainCollector struct {
-	
 }
 
 func (c *mainCollector) Collect(ch chan<- prometheus.Metric) {
@@ -110,27 +109,21 @@ func (c *BitbucketCollector) GetCollectors() []prometheus.Collector {
 
 // collect bitbucket data at background
 func (c *BitbucketCollector) Exec(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			var wg sync.WaitGroup
+	var wg sync.WaitGroup
 
-			for name, collector := range c.collectors {
-				wg.Add(1)
-				go func(name string, collector Collector) {
-					defer wg.Done()
-					execute(ctx, name, collector, c.instance, c.logger)
-				}(name, collector)
-			}
-
-			// wait until all collectors finish
-			wg.Wait()
-			time.Sleep(10 * time.Second)
-		}
+	for name, collector := range c.collectors {
+		wg.Add(1)
+		go func(name string, collector Collector) {
+			defer wg.Done()
+			execute(ctx, name, collector, c.instance, c.logger)
+		}(name, collector)
 	}
 
+	// wait until all collectors finish
+	wg.Wait()
+
+	// wait until context canceled
+	<-ctx.Done()
 }
 
 func execute(

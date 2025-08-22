@@ -7,10 +7,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/nandanurseptama/bitbucket-exporter/helpers"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var repoLabels = []string{"workspace", "project", "name", "langauge"}
+var repoLabels = []string{"workspace", "project", "name", "language", "has_issues", "has_wiki", "is_private"}
 var (
 	repoInfoDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(
@@ -52,37 +53,6 @@ var (
 		repoLabels,
 		nil,
 	)
-
-	// repoHasIssuesDesc = prometheus.NewDesc(
-	// 	prometheus.BuildFQName(
-	// 		namespace,
-	// 		subSystemRepositories,
-	// 		"has_issues",
-	// 	),
-	// 	"Whether the repo has issue or not",
-	// 	[]string{"workspace", "project", "name", "langauge"},
-	// 	nil,
-	// )
-	// repoHasWikiDesc = prometheus.NewDesc(
-	// 	prometheus.BuildFQName(
-	// 		namespace,
-	// 		subSystemRepositories,
-	// 		"has_wiki",
-	// 	),
-	// 	"Whether the repo has wiki or not",
-	// 	[]string{"workspace", "project", "name", "langauge"},
-	// 	nil,
-	// )
-	// repoIsPrivateDesc = prometheus.NewDesc(
-	// 	prometheus.BuildFQName(
-	// 		namespace,
-	// 		subSystemRepositories,
-	// 		"is_private",
-	// 	),
-	// 	"Whether the repo is private or not",
-	// 	[]string{"workspace", "project", "name", "langauge"},
-	// 	nil,
-	// )
 )
 
 type repositoriesCollector struct {
@@ -103,7 +73,15 @@ func (c *repositoriesCollector) Collect(ch chan<- prometheus.Metric) {
 	defer c.holders.Unlock()
 
 	for _, v := range c.holders.data {
-		labels := []string{v.Workspace.Slug, v.Project.Key, v.Slug, v.Language}
+		labels := []string{
+			v.Workspace.Slug,
+			v.Project.Key,
+			v.Slug,
+			v.Language,
+			helpers.BoolToString(v.HasIssues),
+			helpers.BoolToString(v.HasWiki),
+			helpers.BoolToString(v.IsPrivate),
+		}
 		ch <- prometheus.MustNewConstMetric(
 			repoInfoDesc,
 			prometheus.GaugeValue,
@@ -128,12 +106,7 @@ func (c *repositoriesCollector) Collect(ch chan<- prometheus.Metric) {
 			float64(v.Size),
 			labels...,
 		)
-
 	}
-
-	// make empty
-	c.holders.data = []Repository{}
-
 }
 
 // Describe implements the prometheus.Collector interface.
@@ -151,7 +124,6 @@ func (c *repositoriesCollector) Exec(
 ) error {
 	page := 1
 	for _, workspace := range c.workspaces {
-
 		for {
 			var params = map[string]string{"role": "member", "sort": "-created_on", "page": strconv.Itoa(page)}
 
@@ -197,7 +169,7 @@ func (c *repositoriesCollector) Exec(
 			fmt.Println("nextPage :", nextPage)
 			page = nextPageInt
 
-			time.Sleep(1 * time.Second)
+			time.Sleep(5 * time.Second)
 		}
 	}
 
