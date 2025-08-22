@@ -79,6 +79,7 @@ func NewBitbucketCollector(
 		logger:   logger,
 		collectors: map[string]Collector{
 			keyRepositoriesCollector: NewRepositoriesCollector(config.IncludedWorkspace),
+			keyMemberCollector:       NewMemberCollector(config.IncludedWorkspace),
 		},
 	}
 }

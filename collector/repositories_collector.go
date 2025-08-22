@@ -11,7 +11,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var repoLabels = []string{"workspace", "project", "name", "language", "has_issues", "has_wiki", "is_private"}
+var repoLabels = []string{
+	"workspace",
+	"project",
+	"name",
+	"language",
+	"has_issues",
+	"has_wiki",
+	"is_private",
+}
 var (
 	repoInfoDesc = prometheus.NewDesc(
 		prometheus.BuildFQName(
