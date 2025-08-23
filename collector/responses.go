@@ -45,3 +45,17 @@ type Refs struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 }
+
+type Author struct {
+	User User `json:"user"`
+}
+
+type Commit struct {
+	Author Author `json:"author"`
+}
+
+type User struct {
+	DisplayName string `json:"display_name"`
+	Nickname    string `json:"nickname"`
+	Uuid        string `json:"uuid"`
+}

@@ -67,16 +67,19 @@ type repositoriesCollector struct {
 	workspaces                []string
 	holders                   *DataHolder[[]Repository]
 	repositoryRefsDataChannel chan<- Repository
+	commitRepoDataChannel     chan<- Repository
 }
 
 func NewRepositoriesCollector(
 	workspaces []string,
 	repositoryRefsDataChannel chan<- Repository,
+	commitRepoDataChannel chan<- Repository,
 ) *repositoriesCollector {
 	return &repositoriesCollector{
 		workspaces:                workspaces,
 		holders:                   &DataHolder[[]Repository]{},
 		repositoryRefsDataChannel: repositoryRefsDataChannel,
+		commitRepoDataChannel:     commitRepoDataChannel,
 	}
 }
 
@@ -159,6 +162,7 @@ func (c *repositoriesCollector) Exec(
 			// send to refs data channel
 			for _, v := range values {
 				c.repositoryRefsDataChannel <- v
+				c.commitRepoDataChannel <- v
 			}
 			fmt.Println("passing to other done")
 
@@ -189,7 +193,7 @@ func (c *repositoriesCollector) Exec(
 			fmt.Println("nextPage :", nextPage)
 			page = nextPageInt
 
-			time.Sleep(5 * time.Second)
+			time.Sleep(1 * time.Second)
 		}
 	}
 

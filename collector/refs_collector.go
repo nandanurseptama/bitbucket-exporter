@@ -2,10 +2,12 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
+	"github.com/nandanurseptama/bitbucket-exporter/config"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -41,6 +43,7 @@ var (
 )
 
 type refsCollector struct {
+	config                    *config.RefsCollectorConfig
 	refsRepositoryDataChannel <-chan Repository
 	// channel to passing refs data
 	//refsBranchDataChannel chan<- Refs
@@ -49,8 +52,9 @@ type refsCollector struct {
 	totalBranchHolder DataHolder[[]refsData]
 }
 
-func NewRefsCollector(refsRepositoryDataChannel <-chan Repository) *refsCollector {
+func NewRefsCollector(config *config.RefsCollectorConfig, refsRepositoryDataChannel <-chan Repository) *refsCollector {
 	return &refsCollector{
+		config:                    config,
 		refsRepositoryDataChannel: refsRepositoryDataChannel,
 		totalTagsHolder: DataHolder[[]refsData]{
 			data: []refsData{},
@@ -106,38 +110,48 @@ func (p *refsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- repositoryRefsTotalBranch
 }
 func (c *refsCollector) Exec(ctx context.Context, instance *instance) error {
+	if c.config == nil {
+		return errors.New("refs_collector : config nil")
+	}
+
 	for v := range c.refsRepositoryDataChannel {
 		var wg sync.WaitGroup
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			totalTag, _ := c.getTags(ctx, v, instance)
+		if c.config.CollectTotalTag {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				totalTag, _ := c.getTags(ctx, v, instance)
 
-			c.totalTagsHolder.Lock()
-			c.totalTagsHolder.data = append(c.totalTagsHolder.data, refsData{
-				workspace:  v.Workspace.Slug,
-				project:    v.Project.Key,
-				repository: v.Slug,
-				total:      totalTag,
-			})
-			c.totalTagsHolder.Unlock()
-		}()
+				c.totalTagsHolder.Lock()
+				c.totalTagsHolder.data = append(c.totalTagsHolder.data, refsData{
+					workspace:  v.Workspace.Slug,
+					project:    v.Project.Key,
+					repository: v.Slug,
+					total:      totalTag,
+				})
+				c.totalTagsHolder.Unlock()
+			}()
+		}
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			totalBranch, _ := c.getBranches(ctx, v, instance)
-			c.totalBranchHolder.Lock()
-			c.totalBranchHolder.data = append(c.totalBranchHolder.data, refsData{
-				workspace:  v.Workspace.Slug,
-				project:    v.Project.Key,
-				repository: v.Slug,
-				total:      totalBranch,
-			})
-			c.totalBranchHolder.Unlock()
-		}()
-		wg.Wait()
+		if c.config.CollectTotalBranch {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				totalBranch, _ := c.getBranches(ctx, v, instance)
+				c.totalBranchHolder.Lock()
+				c.totalBranchHolder.data = append(c.totalBranchHolder.data, refsData{
+					workspace:  v.Workspace.Slug,
+					project:    v.Project.Key,
+					repository: v.Slug,
+					total:      totalBranch,
+				})
+				c.totalBranchHolder.Unlock()
+			}()
+		}
+		if c.config.CollectTotalBranch || c.config.CollectTotalTag {
+			wg.Wait()
+		}
 	}
 
 	return nil

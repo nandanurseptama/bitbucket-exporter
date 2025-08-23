@@ -22,9 +22,21 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+type RefsCollectorConfig struct {
+	CollectTotalBranch bool `yaml:"collect_total_branch"`
+	CollectTotalTag    bool `yaml:"collect_total_tag"`
+}
+
+type CommitCollectorConfig struct {
+	CollectTotalCommitRepo bool     `yaml:"collect_total_commit_repo"`
+	CollectTotalCommitUser bool     `yaml:"collect_total_commit_user"`
+	IncludedRepository     []string `yaml:"included_repository"`
+}
 type Config struct {
-	Auth              *AuthConfig `yaml:"auth"`
-	IncludedWorkspace []string    `yaml:"included_workspaces"`
+	Auth              *AuthConfig            `yaml:"auth"`
+	IncludedWorkspace []string               `yaml:"included_workspaces"`
+	CommitCollector   *CommitCollectorConfig `yaml:"commit_collector"`
+	RefsCollector     *RefsCollectorConfig   `yaml:"refs_collector"`
 }
 
 type Handler struct {

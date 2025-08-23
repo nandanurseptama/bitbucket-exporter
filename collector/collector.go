@@ -25,6 +25,7 @@ import (
 
 var (
 	repositoryRefsDataChannel = make(chan Repository, 1)
+	commitRepoDataChannel     = make(chan Repository, 1)
 
 	scrapeDurationOpts = prometheus.Opts{
 		Namespace:   namespace,
@@ -83,9 +84,14 @@ func NewBitbucketCollector(
 			keyRepositoriesCollector: NewRepositoriesCollector(
 				config.IncludedWorkspace,
 				repositoryRefsDataChannel,
+				commitRepoDataChannel,
 			),
 			keyMemberCollector: NewMemberCollector(config.IncludedWorkspace),
-			keyRefsCollector:   NewRefsCollector(repositoryRefsDataChannel),
+			keyRefsCollector:   NewRefsCollector(config.RefsCollector, repositoryRefsDataChannel),
+			keyCommitCollector: NewCommitCollector(
+				config.CommitCollector,
+				commitRepoDataChannel,
+			),
 		},
 	}
 }
