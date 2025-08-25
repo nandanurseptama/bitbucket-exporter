@@ -64,11 +64,12 @@ Test with:
 curl "http://localhost:9171/metrics"
 ```
 
-### Example Prometheus config:
+### Basic Prometheus Configuration
 
+Add a block to the scrape_configs of your prometheus.yml config file:
 ```yaml
 scrape_configs:
-  - job_name: postgres
+  - job_name: bitbucket_exporter
     static_configs:
       - targets: ["127.0.0.1:9171"] # Replace IP with the hostname of the docker container if you're running the container in a separate network
 ```
