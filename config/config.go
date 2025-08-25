@@ -23,8 +23,9 @@ import (
 )
 
 type RefsCollectorConfig struct {
-	CollectTotalBranch bool `yaml:"collect_total_branch"`
-	CollectTotalTag    bool `yaml:"collect_total_tag"`
+	CollectTotalBranch bool     `yaml:"collect_total_branch"`
+	CollectTotalTag    bool     `yaml:"collect_total_tag"`
+	IncludedRepository []string `yaml:"included_repository"`
 }
 
 type CommitCollectorConfig struct {

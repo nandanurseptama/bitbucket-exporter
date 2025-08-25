@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 
@@ -123,51 +124,78 @@ func (p *refsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- repositoryRefsTotalBranch
 }
 func (c *refsCollector) Exec(ctx context.Context, instance *instance) error {
-	if c.config == nil {
-		return errors.New("refs_collector : config nil")
-	}
 
-	for v := range c.refsRepositoryDataChannel {
-		var wg sync.WaitGroup
-
-		if c.config.CollectTotalTag {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				totalTag, _ := c.getTags(ctx, v, instance)
-
-				c.totalTagsHolder.Lock()
-				c.totalTagsHolder.data = append(c.totalTagsHolder.data, refsData{
-					workspace:  v.Workspace.Slug,
-					project:    v.Project.Key,
-					repository: v.Slug,
-					total:      totalTag,
-				})
-				c.totalTagsHolder.Unlock()
-			}()
+	for repo := range c.refsRepositoryDataChannel {
+		if c.config == nil {
+			return errors.New("refs_collector : config nil")
 		}
 
-		if c.config.CollectTotalBranch {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				totalBranch, _ := c.getBranches(ctx, v, instance)
-				c.totalBranchHolder.Lock()
-				c.totalBranchHolder.data = append(c.totalBranchHolder.data, refsData{
-					workspace:  v.Workspace.Slug,
-					project:    v.Project.Key,
-					repository: v.Slug,
-					total:      totalBranch,
-				})
-				c.totalBranchHolder.Unlock()
-			}()
+		if len(c.config.IncludedRepository) < 1 {
+			return nil
 		}
-		if c.config.CollectTotalBranch || c.config.CollectTotalTag {
-			wg.Wait()
+
+		if !c.config.CollectTotalBranch && !c.config.CollectTotalTag {
+			continue
 		}
+
+		first := c.config.IncludedRepository[0]
+		if first == "*" && len(c.config.IncludedRepository) == 1 {
+			go c.collectRefs(ctx, repo, instance)
+			continue
+		}
+		i := slices.Index(
+			c.config.IncludedRepository,
+			fmt.Sprintf("%s/%s", repo.Workspace.Slug, repo.Slug),
+		)
+
+		if i < 0 {
+			continue
+		}
+
+		go c.collectRefs(ctx, repo, instance)
 	}
 
 	return nil
+}
+
+func (c *refsCollector) collectRefs(ctx context.Context, repo Repository, instance *instance) {
+	var wg sync.WaitGroup
+
+	if c.config.CollectTotalTag {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			totalTag, _ := c.getTags(ctx, repo, instance)
+
+			c.totalTagsHolder.Lock()
+			c.totalTagsHolder.data = append(c.totalTagsHolder.data, refsData{
+				workspace:  repo.Workspace.Slug,
+				project:    repo.Project.Key,
+				repository: repo.Slug,
+				total:      totalTag,
+			})
+			c.totalTagsHolder.Unlock()
+		}()
+	}
+
+	if c.config.CollectTotalBranch {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			totalBranch, _ := c.getBranches(ctx, repo, instance)
+			c.totalBranchHolder.Lock()
+			c.totalBranchHolder.data = append(c.totalBranchHolder.data, refsData{
+				workspace:  repo.Workspace.Slug,
+				project:    repo.Project.Key,
+				repository: repo.Slug,
+				total:      totalBranch,
+			})
+			c.totalBranchHolder.Unlock()
+		}()
+	}
+	if c.config.CollectTotalBranch || c.config.CollectTotalTag {
+		wg.Wait()
+	}
 }
 
 func (c *refsCollector) getTags(ctx context.Context, repo Repository, instance *instance) (uint64, error) {

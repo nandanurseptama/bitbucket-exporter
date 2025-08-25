@@ -8,13 +8,24 @@ auth:
     password: ""
 included_workspaces: ["your_workspace_slug"]
 refs_collector:
+  # list of repositories that will be collected
+  # supply value with ["*"] if you want to collect refs data from all repo
+  # default value will be empty array
+  included_repository: ["your_workspace_slug/your_repo_slug"]
   # collect total branch at repo
+  # default value will be false
   collect_total_branch: true
   # collect total tag at repo
+  # default value will be false
   collect_total_tag: true
 commit_collector:
+  # list of repositories that will be collected
+  # supply value with ["*"] if you want to collect commit data from all repo
+  # default value will be empty array
   included_repository: ["your_workspace_slug/your_repo_slug"]
   # count total commit at repo
+  # default value will be false
   collect_total_commit_repo: true
   # count total commit of user at repo
+  # default value will be false
   collect_total_commit_user: true

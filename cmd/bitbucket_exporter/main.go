@@ -38,10 +38,12 @@ var (
 		Config: &config.Config{},
 	}
 
-	configFile  = kingpin.Flag("config.file", "Bitbucket exporter configuration file.").Default("config.yaml").String()
-	metricsPath = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").Envar("BITBUCKET_EXPORTER_WEB_TELEMETRY_PATH").String()
-	webConfig   = kingpinflag.AddFlags(kingpin.CommandLine, ":9171")
-	logger      = promslog.NewNopLogger()
+	configFile   = kingpin.Flag("config.file", "Bitbucket exporter configuration file.").Default("config.yaml").String()
+	metricsPath  = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").Envar("BITBUCKET_EXPORTER_WEB_TELEMETRY_PATH").String()
+	webConfig    = kingpinflag.AddFlags(kingpin.CommandLine, ":9171")
+	logger       = promslog.NewNopLogger()
+	fromPromFile = kingpin.Flag("metric.from-prom-file", "Whether to expose metric from .prom file").Default("false").Bool()
+	promfile     = kingpin.Flag("metric.prom-file-path", "File path of prom file").Default("example-output.prom").String()
 )
 
 // Metric name parts.
@@ -77,7 +79,21 @@ func main() {
 	collectors := exporters.GetCollectors()
 	prometheus.MustRegister(collectors...)
 
-	http.Handle(*metricsPath, promhttp.Handler())
+	if fromPromFile != nil && *fromPromFile {
+		http.Handle(*metricsPath, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fileBytes, err := os.ReadFile(*promfile)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("internal server error"))
+				return
+			}
+			w.Header().Add("Content-Type", "text/plain; version=0.0.4; charset=utf-8; escaping=underscores")
+			w.WriteHeader(http.StatusOK)
+			w.Write(fileBytes)
+		}))
+	} else {
+		http.Handle(*metricsPath, promhttp.Handler())
+	}
 
 	if *metricsPath != "/" && *metricsPath != "" {
 		landingConfig := web.LandingConfig{
@@ -111,6 +127,12 @@ func main() {
 	}()
 
 	go func() {
+		if fromPromFile == nil {
+			return
+		}
+		if *fromPromFile {
+			return
+		}
 		exporters.Exec(ctx)
 	}()
 
